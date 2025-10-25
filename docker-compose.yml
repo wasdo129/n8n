@@ -1,0 +1,62 @@
+version: '3'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_DATABASE: n8n
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: true
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD}
+      N8N_PROTOCOL: https
+      N8N_HOST: ${DOMAIN_NAME}
+      N8N_PORT: 5678
+      N8N_ROOT_PATH: /
+      WEBHOOK_URL: https://n8n.vps1759573685.ru/
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+      - ./nginx/logs:/var/log/nginx
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    entrypoint: >
+      /bin/sh -c "
+      crontab -l | { cat; echo '0 12 * * * /usr/bin/certbot renew --quiet'; } | crontab -
+      && certbot certonly --webroot --webroot-path=/var/www/certbot --email ${EMAIL} --agree-tos --no-eff-email -d ${DOMAIN_NAME} --keep-until-expiring
+      && while true; do sleep 12h; done
+      "
+
+volumes:
+  postgres_data:
